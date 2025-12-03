@@ -18,9 +18,28 @@ import (
 	"time"
 
 	"github.com/google/generative-ai-go/genai"
-	"github.com/joho/godotenv"
 	"google.golang.org/api/option"
 )
+
+// Config 配置文件结构
+type Config struct {
+	GeminiAPIKey    string `json:"gemini_api_key"`
+	GeminiModelName string `json:"gemini_model_name"`
+	GeminiRPM       int    `json:"gemini_rpm"`
+}
+
+// loadConfig 从 config.json 加载配置
+func loadConfig() (*Config, error) {
+	data, err := os.ReadFile("config.json")
+	if err != nil {
+		return nil, err
+	}
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
 
 // ---------------------------------------------------------
 // 1. 数据结构
@@ -311,12 +330,20 @@ func askAndRunGemini(pairs []FilePair) {
 		return
 	}
 
-	// 1. 尝试加载 .env 文件
-	err := godotenv.Load()
+	// 1. 尝试加载 config.json 文件
+	cfg, _ := loadConfig()
 
 	// 2. 获取 API Key
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	modelName := os.Getenv("GEMINI_MODEL_NAME")
+	var apiKey, modelName string
+	var rpm int = 2
+
+	if cfg != nil {
+		apiKey = cfg.GeminiAPIKey
+		modelName = cfg.GeminiModelName
+		if cfg.GeminiRPM > 0 {
+			rpm = cfg.GeminiRPM
+		}
+	}
 
 	if apiKey == "" {
 		fmt.Print("请输入Gemini API Key: ")
@@ -337,13 +364,6 @@ func askAndRunGemini(pairs []FilePair) {
 		}
 	}
 
-	// 获取 RPM 限制 (默认 10)
-	rpm := 2
-	if rpmStr := os.Getenv("GEMINI_RPM"); rpmStr != "" {
-		if val, err := strconv.Atoi(rpmStr); err == nil && val > 0 {
-			rpm = val
-		}
-	}
 	requestInterval := time.Minute / time.Duration(rpm)
 
 	// 初始化客户端
