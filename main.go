@@ -11,11 +11,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"sort"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/joho/godotenv"
@@ -337,6 +337,15 @@ func askAndRunGemini(pairs []FilePair) {
 		}
 	}
 
+	// 获取 RPM 限制 (默认 10)
+	rpm := 2
+	if rpmStr := os.Getenv("GEMINI_RPM"); rpmStr != "" {
+		if val, err := strconv.Atoi(rpmStr); err == nil && val > 0 {
+			rpm = val
+		}
+	}
+	requestInterval := time.Minute / time.Duration(rpm)
+
 	// 初始化客户端
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
@@ -363,15 +372,27 @@ func askAndRunGemini(pairs []FilePair) {
 	header := fmt.Sprintf("# 视频切片分析报告\n\n生成时间: %s 使用模型: %s\n\n---\n\n", time.Now().Format("2006-01-02 15:04:05"), modelName)
 	reportFile.WriteString(header)
 
-	fmt.Printf("  -> 开始连接 Gemini (%s) \n", modelName)
+	fmt.Printf("  -> 开始连接 Gemini (%s) RPM限制: %d\n", modelName, rpm)
 	fmt.Printf("  -> 结果将写入: %s\n", reportFileName)
 
 	sort.Slice(pairs, func(i, j int) bool {
-        return pairs[i].GroupIndex < pairs[j].GroupIndex
-    })
+		return pairs[i].GroupIndex < pairs[j].GroupIndex
+	})
+
+	var lastRequestTime time.Time
 
 	for i, pair := range pairs {
+		// RPM 速率限制：确保请求间隔
+		if !lastRequestTime.IsZero() {
+			elapsed := time.Since(lastRequestTime)
+			if elapsed < requestInterval {
+				waitTime := requestInterval - elapsed
+				time.Sleep(waitTime)
+			}
+		}
+
 		fmt.Printf("     [%d/%d] 分析中: %s ... \n", i+1, len(pairs), pair.ImageName)
+		lastRequestTime = time.Now()
 		result, err := analyzePair(ctx, model, pair)
 		if err != nil {
 			fmt.Printf("  -> 分析失败: %v\n", err)
@@ -403,14 +424,28 @@ func analyzePair(ctx context.Context, model *genai.GenerativeModel, pair FilePai
 	// 提示词：强制 JSON 输出
 	promptText := fmt.Sprintf(
 		`分析 %s 和 %s。
-        请分析语音内容和视觉元素的关联性。
-        请严格输出纯 JSON 格式, 不要包含 Markdown 标记 (如 '''json )。结构如下：
-        {
-            "group_index": "第%d组",
-            "image_analysis": { "filename": "%s", "visual_elements": "图片内容描述" },
-            "audio_analysis": { "filename": "%s", "content": "音频内容概括" },
-            "correlation_analysis": { "description": "关联性分析结论", "percentage": "关联度百分比" }
-        }`,
+
+请分析语音内容和视觉元素的关联性。
+
+分析维度:
+1. 图片内容: 识别画面中的视觉元素、场景、物体、文字等
+2. 音频内容: 理解语音所表达的主题、观点、情感
+3. 关联分析: 判断视觉内容与语音内容的匹配程度
+
+评分标准:
+- 90-100%%: 视觉与音频高度契合，画面直接展示了语音所描述的内容
+- 70-89%%: 视觉与音频相关，画面间接支持语音内容
+- 50-69%%: 视觉与音频部分相关，存在一定关联但不紧密
+- 30-49%%: 视觉与音频关联较弱，画面与语音内容偏离
+- 0-29%%: 视觉与音频几乎无关，画面静止或与语音完全无关
+
+请严格输出纯 JSON 格式, 不要包含 Markdown 标记 (如 '''json )。结构如下：
+{
+    "group_index": "第%d组",
+    "image_analysis": { "filename": "%s", "visual_elements": "详细描述画面中的视觉元素、场景、物体、文字等" },
+    "audio_analysis": { "filename": "%s", "content": "概括语音所表达的主题、观点、情感" },
+    "correlation_analysis": { "description": "详细说明视觉内容与语音内容的匹配程度及原因", "percentage": "关联度百分比(如85%%)" }
+}`,
 		pair.ImageName, pair.AudioName,
 		pair.GroupIndex,
 		pair.ImageName, pair.AudioName,
