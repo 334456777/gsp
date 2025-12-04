@@ -45,16 +45,15 @@ func loadConfig() (*Config, error) {
 // 1. 数据结构
 // ---------------------------------------------------------
 
+// AnalysisResult represents video analysis result data structure.
 type AnalysisResult struct {
-	VideoFile    string
-	AnalysisTime string
-	FPS          float64
-	Width        int
-	Height       int
-	TotalFrames  int
-	Threshold    float64
-	CropHeight   int
-	DiffCounts   []int32
+	VideoFile    string  // Path to the video file
+	AnalysisTime string  // Timestamp of the analysis
+	FPS          float64 // Frames per second
+	Width        int     // Video width in pixels
+	Height       int     // Video height in pixels
+	TotalFrames  int     // Total number of frames
+	DiffCounts   []int32 // Frame difference counts
 }
 
 type TimeRange struct {
@@ -513,6 +512,18 @@ func formatTime(seconds float64) string {
 	return fmt.Sprintf("%02d:%02d:%05.2f", h, m, s)
 }
 
+// generateStaticRanges analyzes frame difference counts to find static segments.
+// It identifies time ranges where frame differences are below the threshold
+// and the duration exceeds the minimum duration requirement.
+//
+// Parameters:
+//   - diffCounts: array of frame difference values from AnalysisResult
+//   - threshold: maximum difference value to consider a frame as "static"
+//   - minDurationSec: minimum duration in seconds for a valid static segment
+//   - fps: frames per second of the video
+//
+// Returns:
+//   - []TimeRange: list of time ranges representing static segments
 func generateStaticRanges(diffCounts []int32, threshold, minDurationSec, fps float64) []TimeRange {
 	var segments []TimeRange
 	inStatic := false
@@ -557,6 +568,8 @@ func generateStaticRanges(diffCounts []int32, threshold, minDurationSec, fps flo
 	return segments
 }
 
+// loadAnalysisResult loads and decompresses a gzip-encoded gob file
+// containing video analysis data.
 func loadAnalysisResult(path string) (AnalysisResult, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -572,8 +585,10 @@ func loadAnalysisResult(path string) (AnalysisResult, error) {
 
 	var res AnalysisResult
 	dec := gob.NewDecoder(gr)
-	err = dec.Decode(&res)
-	return res, err
+	if err := dec.Decode(&res); err != nil {
+		return AnalysisResult{}, fmt.Errorf("gob解码失败: %v", err)
+	}
+	return res, nil
 }
 
 // ---------------------------------------------------------
