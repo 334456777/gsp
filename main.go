@@ -392,7 +392,7 @@ func askAndRunGemini(pairs []FilePair) {
 	header := fmt.Sprintf("# 视频切片分析报告\n\n生成时间: %s 使用模型: %s\n\n---\n\n", time.Now().Format("2006-01-02 15:04:05"), modelName)
 	reportFile.WriteString(header)
 
-	fmt.Printf("  -> 开始连接 Gemini (%s) RPM限制: %d\n", modelName, rpm)
+	fmt.Printf("  -> 开始连接 Gemini (%s) RPM 限制: %d\n", modelName, rpm)
 	fmt.Printf("  -> 结果将写入: %s\n", reportFileName)
 
 	sort.Slice(pairs, func(i, j int) bool {
