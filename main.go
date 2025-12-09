@@ -99,7 +99,6 @@ func main() {
 
     printUsageAndExit := func() {
         fmt.Println("Usage: gsp <threshold> [minDurationSec]")
-        fmt.Println("功能: 自动检测当前目录下的第一个 .gob 文件并进行切片分析")
         os.Exit(1)
     }
 
@@ -123,16 +122,12 @@ func main() {
         }
     }
 
-    // --- 单文件检测逻辑 (类似第一个程序) ---
+    // --- 单文件检测逻辑 ---
     targetGob := findGobInCurrentDir()
     if targetGob == "" {
         fmt.Println("错误: 当前目录未找到 .gob 文件。")
-        fmt.Println("请先运行 vcmp 生成 gob 分析文件。")
         os.Exit(1)
     }
-
-    fmt.Printf(">> 锁定目标文件: %s\n", targetGob)
-    fmt.Printf(">> 设定阈值: %.0f, 最小静止时长: %.1fs\n", threshold, minDurationSec)
 
     // --- 处理单个文件 ---
     pairs, err := processGobFile(targetGob, threshold, minDurationSec)
@@ -142,10 +137,10 @@ func main() {
 
     // --- Gemini 分析 ---
     if len(pairs) > 0 {
-        // 传入 targetGob 用于生成同名的报告文件
         askAndRunGemini(pairs, targetGob)
     } else {
-        fmt.Println("未生成任何有效片段，跳过分析。")
+        // 这里完全改回了你要求的输出
+        fmt.Println("没有生成任何片段, 跳过 Gemini 分析")
     }
 }
 
@@ -156,7 +151,7 @@ func findGobInCurrentDir() string {
         return ""
     }
 
-    // 排序，确保每次运行选中的是同一个文件（如果未变动）
+    // 排序，确保每次运行选中的是同一个文件
     sort.Slice(files, func(i, j int) bool {
         return files[i].Name() < files[j].Name()
     })
@@ -177,28 +172,35 @@ func findGobInCurrentDir() string {
 func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair, error) {
     var generatedPairs []FilePair
 
+    // 1. 打印正在读取的文件名 (恢复格式)
+    fmt.Printf("正在读取: %s\n", gobPath)
+
     // A. 读取并解压 Gob
     data, err := loadAnalysisResult(gobPath)
     if err != nil {
         return nil, err
     }
 
-    fmt.Printf(">> 视频源信息: FPS=%.2f, TotalFrames=%d\n", data.FPS, data.TotalFrames)
+    // 2. 打印视频源和设定值 (恢复格式)
+    fmt.Printf("  -> 视频源: %s\n", filepath.Base(data.VideoFile))
+    fmt.Printf("  -> 使用设定值: %.0f %.1f\n", threshold, minDuration)
 
     ranges := generateStaticRanges(data.DiffCounts, threshold, minDuration, data.FPS)
 
     if len(ranges) == 0 {
-        fmt.Printf(">> 警告: 未发现持续 %.1fs 以上的静止片段 (阈值: %.0f)\n", minDuration, threshold)
+        // 3. 打印未发现片段提示 (恢复格式)
+        fmt.Printf("  -> 未发现 %.1fs 以上的静止片段 (阈值: %.0f)\n", minDuration, threshold)
         return nil, nil
     }
 
     // --- 打印详细时间表 ---
-    fmt.Printf(">> 发现 %d 个符合条件的静止片段:\n", len(ranges))
+    fmt.Printf("  -> 符合条件的片段: %d 个\n", len(ranges))
+    fmt.Println("     [组号] 开始时间  -  结束时间      (时长)")
     for i, r := range ranges {
         startStr := formatTime(r.Start)
         endStr := formatTime(r.End)
         durStr := formatTime(r.End - r.Start)
-        fmt.Printf("   [%02d] %s - %s (%s)\n", i+1, startStr, endStr, durStr)
+        fmt.Printf("     [%02d] %s - %s (%s)\n", i+1, startStr, endStr, durStr)
     }
 
     // C. 准备输出目录
@@ -210,7 +212,6 @@ func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair,
 
     // D. 确定视频路径
     videoPath := data.VideoFile
-    // 检查视频是否存在，如果绝对路径不存在，尝试当前目录
     if _, err := os.Stat(videoPath); os.IsNotExist(err) {
         localVideo := filepath.Base(videoPath)
         if _, err := os.Stat(localVideo); err == nil {
@@ -221,10 +222,9 @@ func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair,
     }
 
     // E. 并发执行 FFmpeg
-    fmt.Println(">> 开始提取图片和音频片段...")
     var wg sync.WaitGroup
     var mu sync.Mutex
-    sem := make(chan struct{}, 4) // 限制并发数
+    sem := make(chan struct{}, 4)
     videoBaseName := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
 
     for i, r := range ranges {
@@ -237,7 +237,7 @@ func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair,
             defer wg.Done()
             defer func() { <-sem }()
 
-            // 1. 图片处理 (取中间时刻或开始后2秒)
+            // 1. 图片处理
             snapTime := tr.Start + 2.0
             if snapTime > tr.End {
                 snapTime = tr.Start + (tr.End-tr.Start)/2
@@ -273,7 +273,7 @@ func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair,
     }
 
     wg.Wait()
-    fmt.Printf(">> 提取完成，文件保存在: %s/\n", outputDir)
+    fmt.Printf("  -> 完成, 输出至: %s/\n", outputDir)
     return generatedPairs, nil
 }
 
@@ -281,7 +281,6 @@ func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair,
 // 3. Gemini 分析模块
 // ---------------------------------------------------------
 
-// askAndRunGemini 接收单个 gob 文件的相关切片
 func askAndRunGemini(pairs []FilePair, originalGobName string) {
     fmt.Println("---------------------------------------------------------")
 
@@ -301,9 +300,9 @@ func askAndRunGemini(pairs []FilePair, originalGobName string) {
         totalOutput += output
     }
 
-    fmt.Printf(">> 准备分析 %d 组切片\n", len(pairs))
-    fmt.Printf("   预估输入 Token: %d\n", totalInput)
-    fmt.Printf("   预估输出 Token: %d\n", totalOutput)
+    fmt.Printf("  -> 准备分析 %d 组切片\n", len(pairs))
+    fmt.Printf("  -> 输入token: %d\n", totalInput)
+    fmt.Printf("  -> 预计输出token: %d\n", totalOutput)
     fmt.Println("---------------------------------------------------------")
     fmt.Print("是否请求 Gemini 分析并生成 Markdown 报告？(y/n): ")
 
@@ -312,7 +311,7 @@ func askAndRunGemini(pairs []FilePair, originalGobName string) {
     input = strings.TrimSpace(strings.ToLower(input))
 
     if input != "y" && input != "yes" {
-        fmt.Println("已跳过分析。")
+        fmt.Println("已跳过分析")
         return
     }
 
@@ -356,7 +355,7 @@ func askAndRunGemini(pairs []FilePair, originalGobName string) {
     model := client.GenerativeModel(modelName)
     model.ResponseMIMEType = "application/json"
 
-    // --- 创建报告文件 (以视频名命名) ---
+    // --- 创建报告文件 ---
     videoBaseName := strings.TrimSuffix(originalGobName, ".gob")
     timestamp := time.Now().Format("20060102-150405")
     reportFileName := fmt.Sprintf("report_%s_%s.md", videoBaseName, timestamp)
@@ -371,8 +370,8 @@ func askAndRunGemini(pairs []FilePair, originalGobName string) {
         videoBaseName, time.Now().Format("2006-01-02 15:04:05"), modelName)
     reportFile.WriteString(header)
 
-    fmt.Printf(">> 开始分析，RPM 限制: %d\n", rpm)
-    fmt.Printf(">> 结果将实时写入: %s\n", reportFileName)
+    fmt.Printf("  -> 开始连接 Gemini (%s) RPM 限制: %d\n", modelName, rpm)
+    fmt.Printf("  -> 结果将写入: %s\n", reportFileName)
 
     sort.Slice(pairs, func(i, j int) bool {
         return pairs[i].GroupIndex < pairs[j].GroupIndex
@@ -390,12 +389,12 @@ func askAndRunGemini(pairs []FilePair, originalGobName string) {
             }
         }
 
-        fmt.Printf("   [%d/%d] 正在分析第 %d 组片段... ", i+1, len(pairs), pair.GroupIndex)
+        fmt.Printf("     [%d/%d] 分析中: %s ... \n", i+1, len(pairs), pair.ImageName)
         lastRequestTime = time.Now()
 
         result, err := analyzePair(ctx, model, pair)
         if err != nil {
-            fmt.Printf("失败: %v\n", err)
+            fmt.Printf("  -> 分析失败: %v\n", err)
             reportFile.WriteString(fmt.Sprintf("## 第 %d 组 (分析失败)\n\n错误信息: %v\n\n---\n\n", pair.GroupIndex, err))
             continue
         }
@@ -404,12 +403,10 @@ func askAndRunGemini(pairs []FilePair, originalGobName string) {
         if _, err := reportFile.WriteString(mdContent); err != nil {
             fmt.Printf("写入失败: %v\n", err)
         } else {
-            fmt.Println("完成")
+            // fmt.Println("完成")
         }
     }
-
-    fmt.Println("---------------------------------------------------------")
-    fmt.Printf("全部完成! 请查看报告: %s\n", reportFileName)
+    fmt.Printf("  -> 分析报告: %s\n", reportFileName)
 }
 
 // analyzePair 调用 Gemini API
