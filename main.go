@@ -52,7 +52,7 @@ type AnalysisResult struct {
 	Height             int
 	TotalFrames        int
 	SuggestedThreshold float64
-	DiffCounts         []uint16
+	DiffCounts         []uint32
 }
 
 type TimeRange struct {
@@ -508,7 +508,7 @@ func formatTime(seconds float64) string {
 	return fmt.Sprintf("%02d:%02d:%05.2f", h, m, s)
 }
 
-func generateStaticRanges(diffCounts []uint16, threshold, minDurationSec, fps float64) []TimeRange {
+func generateStaticRanges(diffCounts []uint32, threshold, minDurationSec, fps float64) []TimeRange {
 	var segments []TimeRange
 	inStatic := false
 	startFrame := 0
