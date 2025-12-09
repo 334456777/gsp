@@ -47,13 +47,12 @@ func loadConfig() (*Config, error) {
 
 type AnalysisResult struct {
     VideoFile          string
-    AnalysisTime       string
     FPS                float64
     Width              int
     Height             int
     TotalFrames        int
-    DiffCounts         []int32
     SuggestedThreshold float64
+    DiffCounts         []int32
 }
 
 type TimeRange struct {
