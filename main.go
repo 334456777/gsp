@@ -1,44 +1,44 @@
 package main
 
 import (
-    "bufio"
-    "compress/gzip"
-    "context"
-    "encoding/gob"
-    "encoding/json"
-    "fmt"
-    "log"
-    "os"
-    "os/exec"
-    "path/filepath"
-    "sort"
-    "strconv"
-    "strings"
-    "sync"
-    "time"
+	"bufio"
+	"compress/gzip"
+	"context"
+	"encoding/gob"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 
-    "github.com/google/generative-ai-go/genai"
-    "google.golang.org/api/option"
+	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/api/option"
 )
 
 // Config 配置文件结构
 type Config struct {
-    GeminiAPIKey    string `json:"gemini_api_key"`
-    GeminiModelName string `json:"gemini_model_name"`
-    GeminiRPM       int    `json:"gemini_rpm"`
+	GeminiAPIKey    string `json:"gemini_api_key"`
+	GeminiModelName string `json:"gemini_model_name"`
+	GeminiRPM       int    `json:"gemini_rpm"`
 }
 
 // loadConfig 从 config.json 加载配置
 func loadConfig() (*Config, error) {
-    data, err := os.ReadFile("config.json")
-    if err != nil {
-        return nil, err
-    }
-    var cfg Config
-    if err := json.Unmarshal(data, &cfg); err != nil {
-        return nil, err
-    }
-    return &cfg, nil
+	data, err := os.ReadFile("config.json")
+	if err != nil {
+		return nil, err
+	}
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
 }
 
 // ---------------------------------------------------------
@@ -46,44 +46,44 @@ func loadConfig() (*Config, error) {
 // ---------------------------------------------------------
 
 type AnalysisResult struct {
-    VideoFile          string
-    FPS                float64
-    Width              int
-    Height             int
-    TotalFrames        int
-    SuggestedThreshold float64
-    DiffCounts         []uint16
+	VideoFile          string
+	FPS                float64
+	Width              int
+	Height             int
+	TotalFrames        int
+	SuggestedThreshold float64
+	DiffCounts         []uint16
 }
 
 type TimeRange struct {
-    Start float64
-    End   float64
+	Start float64
+	End   float64
 }
 
 type FilePair struct {
-    GroupIndex    int
-    VideoBaseName string
-    ImagePath     string
-    AudioPath     string
-    ImageName     string
-    AudioName     string
-    DurationSec   float64
+	GroupIndex    int
+	VideoBaseName string
+	ImagePath     string
+	AudioPath     string
+	ImageName     string
+	AudioName     string
+	DurationSec   float64
 }
 
 type GeminiResponse struct {
-    GroupIndex    string `json:"group_index"`
-    ImageAnalysis struct {
-        Filename       string `json:"filename"`
-        VisualElements string `json:"visual_elements"`
-    } `json:"image_analysis"`
-    AudioAnalysis struct {
-        Filename string `json:"filename"`
-        Content  string `json:"content"`
-    } `json:"audio_analysis"`
-    CorrelationAnalysis struct {
-        Description string `json:"description"`
-        Percentage  string `json:"percentage"`
-    } `json:"correlation_analysis"`
+	GroupIndex    string `json:"group_index"`
+	ImageAnalysis struct {
+		Filename       string `json:"filename"`
+		VisualElements string `json:"visual_elements"`
+	} `json:"image_analysis"`
+	AudioAnalysis struct {
+		Filename string `json:"filename"`
+		Content  string `json:"content"`
+	} `json:"audio_analysis"`
+	CorrelationAnalysis struct {
+		Description string `json:"description"`
+		Percentage  string `json:"percentage"`
+	} `json:"correlation_analysis"`
 }
 
 // ---------------------------------------------------------
@@ -205,8 +205,8 @@ func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair,
 	}
 
 	// --- 打印详细时间表 ---
-    fmt.Printf("   -> 符合条件的片段: %d 个\n", len(ranges))
-    fmt.Println("      [组号] 开始时间  -  结束时间      (时长)")
+	fmt.Printf("   -> 符合条件的片段: %d 个\n", len(ranges))
+	fmt.Println("      [组号] 开始时间  -  结束时间      (时长)")
 	for i, r := range ranges {
 		startStr := formatTime(r.Start)
 		endStr := formatTime(r.End)
