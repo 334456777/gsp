@@ -420,7 +420,6 @@ func askAndRunGemini(pairs []FilePair, originalGobName string) {
 		}
 	}
 
-	fmt.Println()
 	fmt.Printf(">> 分析完成\n")
 	fmt.Printf("   -> 报告保存至: %s\n", reportFileName)
 }
