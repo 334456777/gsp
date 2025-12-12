@@ -385,7 +385,6 @@ func askAndRunGemini(pairs []FilePair, originalGobName string) {
 	fmt.Printf(">> 开始连接 Gemini (%s)\n", modelName)
 	fmt.Printf("   -> RPM 限制: %d 请求/分钟\n", rpm)
 	fmt.Printf("   -> 报告文件: %s\n", reportFileName)
-	fmt.Println()
 
 	sort.Slice(pairs, func(i, j int) bool {
 		return pairs[i].GroupIndex < pairs[j].GroupIndex
