@@ -96,6 +96,9 @@ type AnalysisResult struct {
 	// SuggestedThreshold 是推荐的静态片段检测阈值
 	SuggestedThreshold float64
 
+	// SuggestedminDuration 是推荐的最小连续静态区间
+	SuggestedminDuration float64
+
 	// DiffCounts 包含每一帧的差异计数值
 	DiffCounts []uint32
 }
@@ -191,7 +194,7 @@ func main() {
 	}
 
 	var threshold float64 = -1 // -1 表示使用 gob 中的推荐值
-	var minDurationSec float64 = 20.0
+	var minDurationSec float64 = -1 // -1 表示使用 gob 中的推荐值
 
 	// 解析命令行参数
 	if len(args) > 2 {
@@ -289,6 +292,10 @@ func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair,
 
 	if threshold < 0 {
 		threshold = data.SuggestedThreshold
+	}
+
+	if minDuration < 0 {
+		minDuration = data.SuggestedminDuration
 	}
 
 	fmt.Printf("   -> 视频源: %s\n", filepath.Base(data.VideoFile))
