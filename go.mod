@@ -4,7 +4,9 @@ go 1.25.4
 
 require (
 	github.com/google/generative-ai-go v0.20.1
+	github.com/klauspost/compress v1.18.2
 	google.golang.org/api v0.256.0
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -37,5 +39,4 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250804133106-a7a43d27e69b // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251103181224-f26f9409b101 // indirect
 	google.golang.org/grpc v1.76.0 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
 )

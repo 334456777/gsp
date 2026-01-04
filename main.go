@@ -21,9 +21,7 @@ package main
 
 import (
 	"bufio"
-	"compress/gzip"
 	"context"
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -37,7 +35,9 @@ import (
 	"time"
 
 	"github.com/google/generative-ai-go/genai"
+	"github.com/klauspost/compress/zstd"
 	"google.golang.org/api/option"
+	"google.golang.org/protobuf/proto"
 )
 
 // Config 表示从 config.json 加载的应用程序配置。
@@ -179,7 +179,7 @@ func main() {
 
 	printUsageAndExit := func() {
 		fmt.Println(">> 用法:")
-		fmt.Println("   gsp                              # 使用 gob 中保存的推荐阈值")
+		fmt.Println("   gsp                              # 使用数据文件中保存的推荐阈值")
 		fmt.Println("   gsp <threshold>                  # 指定自定义阈值")
 		fmt.Println("   gsp <threshold> <min_duration>   # 指定阈值和最小时长")
 		fmt.Println()
@@ -190,6 +190,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	var threshold float64 = -1 // -1 表示使用数据文件中的推荐值
+	var minDurationSec float64 = 20.0
 	var threshold float64 = -1 // -1 表示使用 gob 中的推荐值
 	var minDurationSec float64 = 20.0 // 20.0 是默认最小连续区间
 
@@ -217,21 +219,21 @@ func main() {
 	}
 
 	// --- 单文件检测逻辑 ---
-	targetGob := findGobInCurrentDir()
-	if targetGob == "" {
-		fmt.Println(">> 错误: 当前目录未找到 .gob 文件")
+	targetDataFile := findDataFileInCurrentDir()
+	if targetDataFile == "" {
+		fmt.Println(">> 错误: 当前目录未找到 .pb.zst 文件")
 		os.Exit(1)
 	}
 
 	// --- 处理单个文件 ---
-	pairs, err := processGobFile(targetGob, threshold, minDurationSec)
+	pairs, err := processDataFile(targetDataFile, threshold, minDurationSec)
 	if err != nil {
 		log.Fatalf(">> 处理文件失败: %v", err)
 	}
 
 	// --- Gemini 分析 ---
 	if len(pairs) > 0 {
-		askAndRunGemini(pairs, targetGob)
+		askAndRunGemini(pairs, targetDataFile)
 	} else {
 		fmt.Println(">> 没有生成任何片段, 跳过 Gemini 分析")
 	}
@@ -243,6 +245,8 @@ func main() {
 // 返回值：
 //   - string: 找到的 .gob 文件名，如果未找到则返回空字符串
 func findGobInCurrentDir() string {
+// findDataFileInCurrentDir 查找当前目录下第一个 .pb.zst 文件 (按字母顺序)
+func findDataFileInCurrentDir() string {
 	files, err := os.ReadDir(".")
 	if err != nil {
 		return ""
@@ -258,7 +262,7 @@ func findGobInCurrentDir() string {
 			continue
 		}
 		fileName := file.Name()
-		if strings.HasSuffix(strings.ToLower(fileName), ".gob") {
+		if strings.HasSuffix(strings.ToLower(fileName), ".pb.zst") {
 			return fileName
 		}
 	}
@@ -277,12 +281,14 @@ func findGobInCurrentDir() string {
 //   - []FilePair: 提取的文件对及其元数据的切片
 //   - error: 处理过程中的错误
 func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair, error) {
+// processDataFile 返回生成的文件对列表
+func processDataFile(dataPath string, threshold, minDuration float64) ([]FilePair, error) {
 	var generatedPairs []FilePair
 
-	fmt.Printf(">> 加载分析数据: %s\n", gobPath)
+	fmt.Printf(">> 加载分析数据: %s\n", dataPath)
 
-	// A. 读取并解压 Gob
-	data, err := loadAnalysisResult(gobPath)
+	// A. 读取并解压 pb.zst
+	data, err := loadAnalysisResult(dataPath)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +300,7 @@ func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair,
 	fmt.Printf("   -> 视频源: %s\n", filepath.Base(data.VideoFile))
 	fmt.Printf("   -> 使用设定值: 阈值 = %.0f 最小时长 = %.0fs\n", threshold, minDuration)
 
-	ranges := generateStaticRanges(data.DiffCounts, threshold, minDuration, data.FPS)
+	ranges := generateStaticRanges(data.DiffCounts, threshold, minDuration, data.Fps)
 
 	if len(ranges) == 0 {
 		fmt.Printf("   -> 未发现 %.0fs 以上的静止片段 (阈值: %.0f)\n", minDuration, threshold)
@@ -312,7 +318,7 @@ func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair,
 	}
 
 	// C. 准备输出目录
-	baseNameNoExt := strings.TrimSuffix(filepath.Base(gobPath), ".gob")
+	baseNameNoExt := strings.TrimSuffix(filepath.Base(dataPath), ".pb.zst")
 	outputDir := "output_" + baseNameNoExt
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, fmt.Errorf("创建目录失败: %w", err)
@@ -405,6 +411,7 @@ func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair,
 //   - pairs: 要分析的文件对列表
 //   - originalGobName: 原始 .gob 文件名，用于生成报告文件名
 func askAndRunGemini(pairs []FilePair, originalGobName string) {
+func askAndRunGemini(pairs []FilePair, originalDataFileName string) {
 	fmt.Println(">> Gemini 分析准备")
 
 	// --- Token 预估 ---
@@ -478,7 +485,7 @@ func askAndRunGemini(pairs []FilePair, originalGobName string) {
 	model.ResponseMIMEType = "application/json"
 
 	// --- 创建报告文件 ---
-	videoBaseName := strings.TrimSuffix(originalGobName, ".gob")
+	videoBaseName := strings.TrimSuffix(originalDataFileName, ".pb.zst")
 	timestamp := time.Now().Format("20060102-150405")
 	reportFileName := fmt.Sprintf("report_%s_%s.md", videoBaseName, timestamp)
 
@@ -706,22 +713,20 @@ func generateStaticRanges(diffCounts []uint32, threshold, minDurationSec, fps fl
 func loadAnalysisResult(path string) (AnalysisResult, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return AnalysisResult{}, err
+		return nil, fmt.Errorf("无法创建zstd解码器: %v", err)
 	}
-	defer f.Close()
+	defer decoder.Close()
 
-	gr, err := gzip.NewReader(f)
+	data, err := decoder.DecodeAll(compressed, nil)
 	if err != nil {
-		return AnalysisResult{}, fmt.Errorf("无法解压gzip: %v", err)
+		return nil, fmt.Errorf("zstd解压失败: %v", err)
 	}
-	defer gr.Close()
 
 	var res AnalysisResult
-	dec := gob.NewDecoder(gr)
-	if err := dec.Decode(&res); err != nil {
-		return AnalysisResult{}, fmt.Errorf("gob解码失败: %v", err)
+	if err := proto.Unmarshal(data, &res); err != nil {
+		return nil, fmt.Errorf("protobuf解码失败: %v", err)
 	}
-	return res, nil
+	return &res, nil
 }
 
 // ---------------------------------------------------------
