@@ -1,22 +1,3 @@
-// Package main 提供视频静态片段分析工具，用于检测视频中的静止画面区域，
-// 并使用 Google Gemini AI 分析视觉内容与音频内容的相关性。
-//
-// 工具的工作流程分为三个主要阶段：
-//  1. 从 .gob 文件加载预分析的视频数据
-//  2. 从检测到的静态片段中提取图片帧和音频片段
-//  3. 使用 Google Gemini AI 分析视觉与音频内容的匹配度
-//
-// 使用方法：
-//
-//	gsp                              # 使用 .gob 文件中保存的推荐阈值
-//	gsp <threshold>                  # 指定自定义阈值
-//	gsp <threshold> <min_duration>   # 指定阈值和最小时长
-//
-// 示例：
-//
-//	gsp           # 使用输入 gob 文件内含的推荐阈值和默认 20 秒最小时长
-//	gsp 500       # 使用阈值 500 和默认 20 秒最小时长
-//	gsp 500 15    # 使用阈值 500 和 15 秒最小时长
 package main
 
 import (
@@ -36,29 +17,19 @@ import (
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/klauspost/compress/zstd"
+	"gobsnip/proto"
 	"google.golang.org/api/option"
-	"google.golang.org/protobuf/proto"
+	gproto "google.golang.org/protobuf/proto"
 )
 
-// Config 表示从 config.json 加载的应用程序配置。
-// 包含访问 Gemini AI 服务所需的 API 凭证和设置。
+// Config 配置文件结构
 type Config struct {
-	// GeminiAPIKey 是访问 Google Gemini AI 服务的 API 密钥
-	GeminiAPIKey string `json:"gemini_api_key"`
-
-	// GeminiModelName 指定要使用的 Gemini 模型（例如 "gemini-1.5-pro"）
+	GeminiAPIKey    string `json:"gemini_api_key"`
 	GeminiModelName string `json:"gemini_model_name"`
-
-	// GeminiRPM 设置每分钟请求数限制（Requests Per Minute）
-	GeminiRPM int `json:"gemini_rpm"`
+	GeminiRPM       int    `json:"gemini_rpm"`
 }
 
-// loadConfig 从 config.json 文件读取并解析配置。
-// 如果文件不存在或解析失败，返回错误。
-//
-// 返回值：
-//   - *Config: 解析后的配置对象
-//   - error: 读取或解析过程中的错误
+// loadConfig 从 config.json 加载配置
 func loadConfig() (*Config, error) {
 	data, err := os.ReadFile("config.json")
 	if err != nil {
@@ -75,97 +46,34 @@ func loadConfig() (*Config, error) {
 // 1. 数据结构
 // ---------------------------------------------------------
 
-// AnalysisResult 包含存储在 .gob 文件中的视频分析数据。
-// 该数据由独立的视频分析工具生成，包含用于检测静态片段的帧差异计数。
-type AnalysisResult struct {
-	// VideoFile 是原始视频文件的路径
-	VideoFile string
-
-	// FPS 是视频的帧率（每秒帧数）
-	FPS float64
-
-	// Width 是视频宽度（像素）
-	Width int
-
-	// Height 是视频高度（像素）
-	Height int
-
-	// TotalFrames 是视频的总帧数
-	TotalFrames int
-
-	// SuggestedThreshold 是推荐的静态片段检测阈值
-	SuggestedThreshold float64
-
-	// DiffCounts 包含每一帧的差异计数值
-	DiffCounts []uint32
-}
-
-// TimeRange 表示视频中的连续时间段。
-// Start 和 End 都以秒为单位，从视频开始处计算。
 type TimeRange struct {
-	// Start 是起始时间（秒）
 	Start float64
-
-	// End 是结束时间（秒）
-	End float64
+	End   float64
 }
 
-// FilePair 表示提取的图片和音频文件对及其元数据。
-// 每个 FilePair 对应视频中的一个静态片段。
 type FilePair struct {
-	// GroupIndex 是该片段的顺序编号（从 1 开始）
-	GroupIndex int
-
-	// VideoBaseName 是源视频文件的基础名称（不含扩展名）
+	GroupIndex    int
 	VideoBaseName string
-
-	// ImagePath 是提取的图片文件的完整路径
-	ImagePath string
-
-	// AudioPath 是提取的音频文件的完整路径
-	AudioPath string
-
-	// ImageName 是提取的图片文件名
-	ImageName string
-
-	// AudioName 是提取的音频文件名
-	AudioName string
-
-	// DurationSec 是该片段的持续时间（秒）
-	DurationSec float64
+	ImagePath     string
+	AudioPath     string
+	ImageName     string
+	AudioName     string
+	DurationSec   float64
 }
 
-// GeminiResponse 表示 Gemini AI 返回的结构化响应，
-// 包含对图片、音频及其相关性的分析结果。
 type GeminiResponse struct {
-	// GroupIndex 标识该分析属于哪个片段
-	GroupIndex string `json:"group_index"`
-
-	// ImageAnalysis 包含视觉内容的分析结果
+	GroupIndex    string `json:"group_index"`
 	ImageAnalysis struct {
-		// Filename 是被分析的图片文件名
-		Filename string `json:"filename"`
-
-		// VisualElements 描述图片中的视觉内容
+		Filename       string `json:"filename"`
 		VisualElements string `json:"visual_elements"`
 	} `json:"image_analysis"`
-
-	// AudioAnalysis 包含音频内容的分析结果
 	AudioAnalysis struct {
-		// Filename 是被分析的音频文件名
 		Filename string `json:"filename"`
-
-		// Content 描述音频中表达的主题和情感
-		Content string `json:"content"`
+		Content  string `json:"content"`
 	} `json:"audio_analysis"`
-
-	// CorrelationAnalysis 描述视觉和音频内容的匹配程度
 	CorrelationAnalysis struct {
-		// Description 详细说明视觉与音频的相关性及原因
 		Description string `json:"description"`
-
-		// Percentage 是相关度百分比（例如 "85%"）
-		Percentage string `json:"percentage"`
+		Percentage  string `json:"percentage"`
 	} `json:"correlation_analysis"`
 }
 
@@ -192,8 +100,6 @@ func main() {
 
 	var threshold float64 = -1 // -1 表示使用数据文件中的推荐值
 	var minDurationSec float64 = 20.0
-	var threshold float64 = -1 // -1 表示使用 gob 中的推荐值
-	var minDurationSec float64 = 20.0 // 20.0 是默认最小连续区间
 
 	// 解析命令行参数
 	if len(args) > 2 {
@@ -239,12 +145,6 @@ func main() {
 	}
 }
 
-// findGobInCurrentDir 在当前目录中查找第一个 .gob 文件（按字母顺序排序）。
-// 如果未找到 .gob 文件，返回空字符串。
-//
-// 返回值：
-//   - string: 找到的 .gob 文件名，如果未找到则返回空字符串
-func findGobInCurrentDir() string {
 // findDataFileInCurrentDir 查找当前目录下第一个 .pb.zst 文件 (按字母顺序)
 func findDataFileInCurrentDir() string {
 	files, err := os.ReadDir(".")
@@ -269,18 +169,6 @@ func findDataFileInCurrentDir() string {
 	return ""
 }
 
-// processGobFile 从 .gob 文件加载分析数据，检测静态片段，
-// 并提取对应的图片和音频片段。
-//
-// 参数：
-//   - gobPath: .gob 文件的路径
-//   - threshold: 检测静态片段的阈值，-1 表示使用文件中的推荐值
-//   - minDuration: 静态片段的最小持续时间（秒）
-//
-// 返回值：
-//   - []FilePair: 提取的文件对及其元数据的切片
-//   - error: 处理过程中的错误
-func processGobFile(gobPath string, threshold, minDuration float64) ([]FilePair, error) {
 // processDataFile 返回生成的文件对列表
 func processDataFile(dataPath string, threshold, minDuration float64) ([]FilePair, error) {
 	var generatedPairs []FilePair
@@ -397,20 +285,6 @@ func processDataFile(dataPath string, threshold, minDuration float64) ([]FilePai
 // 3. Gemini 分析模块
 // ---------------------------------------------------------
 
-// askAndRunGemini 询问用户是否进行 Gemini 分析，如果确认则执行分析并生成 Markdown 报告。
-//
-// 该函数会：
-//  1. 显示 Token 使用预估
-//  2. 询问用户确认
-//  3. 加载 API 配置
-//  4. 初始化 Gemini 客户端
-//  5. 逐个分析文件对
-//  6. 生成包含所有分析结果的 Markdown 报告
-//
-// 参数：
-//   - pairs: 要分析的文件对列表
-//   - originalGobName: 原始 .gob 文件名，用于生成报告文件名
-func askAndRunGemini(pairs []FilePair, originalGobName string) {
 func askAndRunGemini(pairs []FilePair, originalDataFileName string) {
 	fmt.Println(">> Gemini 分析准备")
 
@@ -541,22 +415,7 @@ func askAndRunGemini(pairs []FilePair, originalDataFileName string) {
 	fmt.Printf("   -> 报告保存至: %s\n", reportFileName)
 }
 
-// analyzePair 调用 Gemini API 分析单个图片和音频文件对。
-//
-// 该函数会：
-//  1. 读取图片和音频文件
-//  2. 构建分析提示词
-//  3. 调用 Gemini API
-//  4. 解析 JSON 响应
-//
-// 参数：
-//   - ctx: 上下文对象
-//   - model: Gemini 生成模型
-//   - pair: 要分析的文件对
-//
-// 返回值：
-//   - *GeminiResponse: 分析结果
-//   - error: API 调用或解析过程中的错误
+// analyzePair 调用 Gemini API
 func analyzePair(ctx context.Context, model *genai.GenerativeModel, pair FilePair) (*GeminiResponse, error) {
 	imgData, err := os.ReadFile(pair.ImagePath)
 	if err != nil {
@@ -631,16 +490,6 @@ func analyzePair(ctx context.Context, model *genai.GenerativeModel, pair FilePai
 // 4. 工具函数
 // ---------------------------------------------------------
 
-// formatTime 将秒数格式化为 HH:MM:SS.ms 格式的时间字符串。
-//
-// 参数：
-//   - seconds: 要格式化的秒数
-//
-// 返回值：
-//   - string: 格式化后的时间字符串，格式为 "HH:MM:SS.ms"
-//
-// 示例：
-//   formatTime(3661.25) 返回 "01:01:01.25"
 func formatTime(seconds float64) string {
 	h := int(seconds) / 3600
 	m := (int(seconds) % 3600) / 60
@@ -648,19 +497,6 @@ func formatTime(seconds float64) string {
 	return fmt.Sprintf("%02d:%02d:%05.2f", h, m, s)
 }
 
-// generateStaticRanges 根据帧差异计数生成静态片段的时间范围列表。
-//
-// 该函数遍历每一帧的差异值，当连续多帧的差异值低于阈值时，
-// 判定为静态片段。只有持续时间超过最小时长的片段才会被返回。
-//
-// 参数：
-//   - diffCounts: 每一帧的差异计数值切片
-//   - threshold: 判定为静态画面的阈值
-//   - minDurationSec: 静态片段的最小持续时间（秒）
-//   - fps: 视频的帧率
-//
-// 返回值：
-//   - []TimeRange: 符合条件的静态片段时间范围列表
 func generateStaticRanges(diffCounts []uint32, threshold, minDurationSec, fps float64) []TimeRange {
 	var segments []TimeRange
 	inStatic := false
@@ -702,16 +538,13 @@ func generateStaticRanges(diffCounts []uint32, threshold, minDurationSec, fps fl
 	return segments
 }
 
-// loadAnalysisResult 从 gzip 压缩的 gob 文件中加载视频分析结果。
-//
-// 参数：
-//   - path: .gob 文件的路径
-//
-// 返回值：
-//   - AnalysisResult: 解析后的分析结果
-//   - error: 读取、解压或解码过程中的错误
-func loadAnalysisResult(path string) (AnalysisResult, error) {
-	f, err := os.Open(path)
+func loadAnalysisResult(path string) (*proto.AnalysisResult, error) {
+	compressed, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	decoder, err := zstd.NewReader(nil)
 	if err != nil {
 		return nil, fmt.Errorf("无法创建zstd解码器: %v", err)
 	}
@@ -722,8 +555,8 @@ func loadAnalysisResult(path string) (AnalysisResult, error) {
 		return nil, fmt.Errorf("zstd解压失败: %v", err)
 	}
 
-	var res AnalysisResult
-	if err := proto.Unmarshal(data, &res); err != nil {
+	var res proto.AnalysisResult
+	if err := gproto.Unmarshal(data, &res); err != nil {
 		return nil, fmt.Errorf("protobuf解码失败: %v", err)
 	}
 	return &res, nil
@@ -733,20 +566,6 @@ func loadAnalysisResult(path string) (AnalysisResult, error) {
 // 5. FFmpeg 工具
 // ---------------------------------------------------------
 
-// extractFrame 从视频中提取指定时间点的单帧图片。
-//
-// 使用 FFmpeg 命令行工具提取视频帧。提取的图片质量参数为 2（高质量）。
-//
-// 参数：
-//   - videoPath: 源视频文件路径
-//   - outPath: 输出图片文件路径
-//   - timeSec: 要提取的时间点（秒）
-//
-// 返回值：
-//   - error: FFmpeg 执行错误，如果成功则返回 nil
-//
-// 示例：
-//   err := extractFrame("video.mp4", "frame.jpg", 10.5)
 func extractFrame(videoPath, outPath string, timeSec float64) error {
 	cmd := exec.Command("ffmpeg", "-y",
 		"-ss", fmt.Sprintf("%.3f", timeSec),
@@ -758,22 +577,6 @@ func extractFrame(videoPath, outPath string, timeSec float64) error {
 	return cmd.Run()
 }
 
-// extractAudio 从视频中提取指定时间段的音频。
-//
-// 使用 FFmpeg 命令行工具提取视频中的音频片段，输出为 MP3 格式。
-// 音频质量参数为 2（高质量）。
-//
-// 参数：
-//   - videoPath: 源视频文件路径
-//   - outPath: 输出音频文件路径
-//   - start: 开始时间（秒）
-//   - end: 结束时间（秒）
-//
-// 返回值：
-//   - error: FFmpeg 执行错误，如果成功则返回 nil
-//
-// 示例：
-//   err := extractAudio("video.mp4", "audio.mp3", 10.0, 30.0)
 func extractAudio(videoPath, outPath string, start, end float64) error {
 	cmd := exec.Command("ffmpeg", "-y",
 		"-ss", fmt.Sprintf("%.3f", start),
@@ -787,20 +590,6 @@ func extractAudio(videoPath, outPath string, start, end float64) error {
 	return cmd.Run()
 }
 
-// formatToMarkdown 将分析结果格式化为 Markdown 格式的字符串。
-//
-// 生成的 Markdown 包含：
-//  - 组号和相关度标题
-//  - 图片展示和视觉元素描述
-//  - 音频内容描述
-//  - 关联分析说明
-//
-// 参数：
-//   - pair: 文件对信息
-//   - res: Gemini 分析结果
-//
-// 返回值：
-//   - string: 格式化后的 Markdown 文本
 func formatToMarkdown(pair FilePair, res *GeminiResponse) string {
 	return fmt.Sprintf(`## %d. 第%d组（**相关度: %s**）
 ### 图片（%s）
