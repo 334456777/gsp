@@ -39,7 +39,7 @@ import (
 	"github.com/google/generative-ai-go/genai"
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/api/option"
-	gproto "google.golang.org/protobuf/proto"
+	pb "google.golang.org/protobuf/proto"
 )
 
 // Config 表示从 config.json 加载的应用程序配置。
@@ -699,7 +699,7 @@ func loadAnalysisResult(path string) (*proto.AnalysisResult, error) {
 	}
 
 	var res proto.AnalysisResult
-	if err := gproto.Unmarshal(data, &res); err != nil {
+	if err := pb.Unmarshal(data, &res); err != nil {
 		return nil, fmt.Errorf("protobuf解码失败: %v", err)
 	}
 	return &res, nil
