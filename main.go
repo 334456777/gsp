@@ -1,22 +1,22 @@
-// Package main 提供视频静态片段分析工具，用于检测视频中的静止画面区域，
-// 并使用 Google Gemini AI 分析视觉内容与音频内容的相关性。
+// Package main provides a video static segment analysis tool that detects static frame regions
+// in videos and uses Google Gemini AI to analyze the correlation between visual content and audio content.
 //
-// 工具的工作流程分为三个主要阶段：
-//  1. 从 .pb.zst 文件加载预分析的视频数据（Protocol Buffers + Zstandard 压缩）
-//  2. 从检测到的静态片段中提取图片帧和音频片段
-//  3. 使用 Google Gemini AI 分析视觉与音频内容的匹配度
+// The tool workflow consists of three main phases:
+//  1. Load pre-analyzed video data from .pb.zst files (Protocol Buffers + Zstandard compression)
+//  2. Extract image frames and audio segments from detected static segments
+//  3. Use Google Gemini AI to analyze the match between visual and audio content
 //
-// 使用方法：
+// Usage:
 //
-//	gsp                              # 使用 .pb.zst 文件中保存的推荐阈值
-//	gsp <threshold>                  # 指定自定义阈值
-//	gsp <threshold> <min_duration>   # 指定阈值和最小时长
+//	gsp                              # Use recommended threshold from .pb.zst file
+//	gsp <threshold>                  # Specify custom threshold
+//	gsp <threshold> <min_duration>   # Specify threshold and minimum duration
 //
-// 示例：
+// Examples:
 //
-//	gsp           # 使用输入文件内含的推荐阈值和默认 20 秒最小时长
-//	gsp 500       # 使用阈值 500 和默认 20 秒最小时长
-//	gsp 500 15    # 使用阈值 500 和 15 秒最小时长
+//	gsp           # Use recommended threshold from input file and default 20s minimum duration
+//	gsp 500       # Use threshold 500 and default 20s minimum duration
+//	gsp 500 15    # Use threshold 500 and 15s minimum duration
 package main
 
 import (
@@ -42,25 +42,25 @@ import (
 	pb "google.golang.org/protobuf/proto"
 )
 
-// Config 表示从 config.json 加载的应用程序配置。
-// 包含访问 Gemini AI 服务所需的 API 凭证和设置。
+// Config represents application configuration loaded from config.json.
+// Contains API credentials and settings required to access Gemini AI service.
 type Config struct {
-	// GeminiAPIKey 是访问 Google Gemini AI 服务的 API 密钥
+	// GeminiAPIKey is the API key for accessing Google Gemini AI service
 	GeminiAPIKey string `json:"gemini_api_key"`
 
-	// GeminiModelName 指定要使用的 Gemini 模型（例如 "gemini-1.5-pro"）
+	// GeminiModelName specifies which Gemini model to use (e.g., "gemini-1.5-pro")
 	GeminiModelName string `json:"gemini_model_name"`
 
-	// GeminiRPM 设置每分钟请求数限制（Requests Per Minute）
+	// GeminiRPM sets the requests per minute limit
 	GeminiRPM int `json:"gemini_rpm"`
 }
 
-// loadConfig 从 config.json 文件读取并解析配置。
-// 如果文件不存在或解析失败，返回错误。
+// loadConfig reads and parses configuration from config.json file.
+// Returns error if file doesn't exist or parsing fails.
 //
-// 返回值：
-//   - *Config: 解析后的配置对象
-//   - error: 读取或解析过程中的错误
+// Returns:
+//   - *Config: Parsed configuration object
+//   - error: Error during reading or parsing
 func loadConfig() (*Config, error) {
 	data, err := os.ReadFile("config.json")
 	if err != nil {
@@ -74,16 +74,16 @@ func loadConfig() (*Config, error) {
 }
 
 // ---------------------------------------------------------
-// 1. 数据结构
+// 1. Data Structures
 // ---------------------------------------------------------
 
-// TimeRange 表示视频中的连续时间段。
-// Start 和 End 都以秒为单位，从视频开始处计算。
+// TimeRange represents a continuous time period in a video.
+// Both Start and End are in seconds, calculated from the beginning of the video.
 type TimeRange struct {
-	// Start 是起始时间（秒）
+	// Start is the start time in seconds
 	Start float64
 
-	// End 是结束时间（秒）
+	// End is the end time in seconds
 	End float64
 }
 
@@ -155,15 +155,15 @@ func main() {
 	args := os.Args[1:]
 
 	printUsageAndExit := func() {
-		fmt.Println(">> 用法:")
-		fmt.Println("   gsp                              # 使用数据文件中保存的推荐阈值")
-		fmt.Println("   gsp <threshold>                  # 指定自定义阈值")
-		fmt.Println("   gsp <threshold> <min_duration>   # 指定阈值和最小时长")
+		fmt.Println(">> Usage:")
+		fmt.Println("   gsp                              # Use recommended threshold from data file")
+		fmt.Println("   gsp <threshold>                  # Specify custom threshold")
+		fmt.Println("   gsp <threshold> <min_duration>   # Specify threshold and minimum duration")
 		fmt.Println()
-		fmt.Println(">> 示例:")
-		fmt.Println("   gsp           # 使用推荐阈值和默认 20 秒最小时长")
-		fmt.Println("   gsp 500       # 使用阈值 500 和默认 20 秒最小时长")
-		fmt.Println("   gsp 500 15    # 使用阈值 500 和 15 秒最小时长")
+		fmt.Println(">> Examples:")
+		fmt.Println("   gsp           # Use recommended threshold and default 20s minimum duration")
+		fmt.Println("   gsp 500       # Use threshold 500 and default 20s minimum duration")
+		fmt.Println("   gsp 500 15    # Use threshold 500 and 15s minimum duration")
 		os.Exit(1)
 	}
 
@@ -179,7 +179,7 @@ func main() {
 		if val, err := strconv.ParseFloat(args[0], 64); err == nil && val > 0 {
 			threshold = val
 		} else {
-			fmt.Printf(">> 错误: 阈值参数不合法: %s\n", args[0])
+			fmt.Printf(">> Error: Invalid threshold parameter: %s\n", args[0])
 			printUsageAndExit()
 		}
 	}
@@ -188,7 +188,7 @@ func main() {
 		if val, err := strconv.ParseFloat(args[1], 64); err == nil && val > 0 {
 			minDurationSec = val
 		} else {
-			fmt.Printf(">> 错误: 时长参数不合法: %s\n", args[1])
+			fmt.Printf(">> Error: Invalid duration parameter: %s\n", args[1])
 			printUsageAndExit()
 		}
 	}
@@ -196,7 +196,7 @@ func main() {
 	// --- 单文件检测逻辑 ---
 	targetDataFile := findDataFileInCurrentDir()
 	if targetDataFile == "" {
-		fmt.Println(">> 错误: 当前目录未找到 .pb.zst 文件")
+		fmt.Println(">> Error: No .pb.zst file found in current directory")
 		os.Exit(1)
 	}
 
@@ -382,7 +382,7 @@ func processDataFile(dataPath string, threshold, minDuration float64) ([]FilePai
 //   - pairs: 要分析的文件对列表
 //   - originalDataFileName: 原始 .pb.zst 文件名，用于生成报告文件名
 func askAndRunGemini(pairs []FilePair, originalDataFileName string) {
-	fmt.Println(">> Gemini 分析准备")
+	fmt.Println(">> Gemini analysis preparation")
 
 	// --- Token 预估 ---
 	const (
@@ -400,17 +400,17 @@ func askAndRunGemini(pairs []FilePair, originalDataFileName string) {
 		totalOutput += output
 	}
 
-	fmt.Printf("   -> 准备分析 %d 组切片\n", len(pairs))
-	fmt.Printf("   -> 输入 token: %d\n", totalInput)
-	fmt.Printf("   -> 预计输出 token: %d\n", totalOutput)
-	fmt.Print("是否请求 Gemini 分析并生成 Markdown 报告？(y/n): ")
+	fmt.Printf("   -> Ready to analyze %d segments\n", len(pairs))
+	fmt.Printf("   -> Input tokens: %d\n", totalInput)
+	fmt.Printf("   -> Estimated output tokens: %d\n", totalOutput)
+	fmt.Print("Request Gemini analysis and generate Markdown report? (y/n): ")
 
 	reader := bufio.NewReader(os.Stdin)
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(strings.ToLower(input))
 
 	if input != "y" && input != "yes" {
-		fmt.Println(">> 已跳过分析")
+		fmt.Println(">> Analysis skipped")
 		return
 	}
 
@@ -428,18 +428,18 @@ func askAndRunGemini(pairs []FilePair, originalDataFileName string) {
 	}
 
 	if apiKey == "" {
-		fmt.Print("请输入 Gemini API Key: ")
+		fmt.Print("Enter Gemini API Key: ")
 		keyInput, _ := reader.ReadString('\n')
 		apiKey = strings.TrimSpace(keyInput)
 	}
 	if modelName == "" {
-		fmt.Print("请输入使用的模型代号 (如 gemini-1.5-pro): ")
+		fmt.Print("Enter model name to use (e.g., gemini-1.5-pro): ")
 		modelInput, _ := reader.ReadString('\n')
 		modelName = strings.TrimSpace(modelInput)
 	}
 
 	if apiKey == "" || modelName == "" {
-		fmt.Println(">> 错误: 缺少 API Key 或模型名称")
+		fmt.Println(">> Error: Missing API Key or model name")
 		return
 	}
 
@@ -469,9 +469,9 @@ func askAndRunGemini(pairs []FilePair, originalDataFileName string) {
 		videoBaseName, time.Now().Format("2006-01-02 15:04:05"), modelName)
 	reportFile.WriteString(header)
 
-	fmt.Printf(">> 开始连接 Gemini (%s)\n", modelName)
-	fmt.Printf("   -> RPM 限制: %d 请求/分钟\n", rpm)
-	fmt.Printf("   -> 报告文件: %s\n", reportFileName)
+	fmt.Printf(">> Connecting to Gemini (%s)\n", modelName)
+	fmt.Printf("   -> RPM limit: %d requests/minute\n", rpm)
+	fmt.Printf("   -> Report file: %s\n", reportFileName)
 
 	sort.Slice(pairs, func(i, j int) bool {
 		return pairs[i].GroupIndex < pairs[j].GroupIndex
@@ -489,13 +489,13 @@ func askAndRunGemini(pairs []FilePair, originalDataFileName string) {
 			}
 		}
 
-		fmt.Printf("   -> [%d/%d] 分析中: %s\n", i+1, len(pairs), pair.ImageName)
+		fmt.Printf("   -> [%d/%d] Analyzing: %s\n", i+1, len(pairs), pair.ImageName)
 		lastRequestTime = time.Now()
 
 		result, err := analyzePair(ctx, model, pair)
 		if err != nil {
-			fmt.Printf("      ✗ 分析失败: %v\n", err)
-			reportFile.WriteString(fmt.Sprintf("## 第 %d 组 (分析失败)\n\n错误信息: %v\n\n---\n\n", pair.GroupIndex, err))
+			fmt.Printf("      ✗ Analysis failed: %v\n", err)
+			reportFile.WriteString(fmt.Sprintf("## Group %d (Analysis failed)\n\nError: %v\n\n---\n\n", pair.GroupIndex, err))
 			continue
 		}
 
@@ -539,28 +539,28 @@ func analyzePair(ctx context.Context, model *genai.GenerativeModel, pair FilePai
 	}
 
 	promptText := fmt.Sprintf(
-		`分析 %s 和 %s。
+		`Analyze %s and %s.
 
-请分析语音内容和视觉元素的关联性。
+Please analyze the correlation between audio content and visual elements.
 
-分析维度:
-1. 图片内容: 识别画面中的视觉元素、场景、物体、文字等
-2. 音频内容: 理解语音所表达的主题、观点、情感
-3. 关联分析: 判断视觉内容与语音内容的匹配程度
+Analysis dimensions:
+1. Image content: Identify visual elements, scenes, objects, text, etc. in the frame
+2. Audio content: Understand the themes, viewpoints, and emotions expressed in the speech
+3. Correlation analysis: Determine the degree of match between visual content and audio content
 
-评分标准:
-- 90-100%%: 视觉与音频高度契合，画面直接展示了语音所描述的内容
-- 70-89%%: 视觉与音频相关，画面间接支持语音内容
-- 50-69%%: 视觉与音频部分相关，存在一定关联但不紧密
-- 30-49%%: 视觉与音频关联较弱，画面与语音内容割裂
-- 0-29%%: 视觉与音频几乎无关，画面静止或与语音完全无关
+Scoring criteria:
+- 90-100%%: Visual and audio highly consistent, frame directly shows what the speech describes
+- 70-89%%: Visual and audio related, frame indirectly supports audio content
+- 50-69%%: Visual and audio partially related, some connection but not tight
+- 30-49%%: Visual and audio weakly related, frame disconnected from speech content
+- 0-29%%: Visual and audio almost unrelated, frame static or completely unrelated to speech
 
-请严格输出纯 JSON 格式, 不要包含 Markdown 标记 (如 '''json )。结构如下：
+Please output strictly in pure JSON format, do not include Markdown markers (such as '''json). Structure as follows:
 {
-    "group_index": "第%d组",
-    "image_analysis": { "filename": "%s", "visual_elements": "详细描述画面中的视觉元素、场景、物体、文字等" },
-    "audio_analysis": { "filename": "%s", "content": "概括语音所表达的主题、观点、情感" },
-    "correlation_analysis": { "description": "详细说明视觉内容与语音内容的匹配程度及原因", "percentage": "关联度百分比(如85%%)" }
+    "group_index": "Group %d",
+    "image_analysis": { "filename": "%s", "visual_elements": "Describe in detail the visual elements, scenes, objects, text, etc. in the frame" },
+    "audio_analysis": { "filename": "%s", "content": "Summarize the themes, viewpoints, and emotions expressed in the speech" },
+    "correlation_analysis": { "description": "Explain in detail the degree of match between visual content and audio content and why", "percentage": "Correlation percentage (e.g., 85%%)" }
 }`,
 		pair.ImageName, pair.AudioName,
 		pair.GroupIndex,
